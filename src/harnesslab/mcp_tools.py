@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from harnesslab.agentic.schema import normalize_tool_schema
 from harnesslab.models import ToolSpec
 from harnesslab.tools import ToolRegistry
 
@@ -22,16 +23,53 @@ class MCPStdioProvider:
         self.env = dict(env or {})
         self.namespace = namespace
         self._remote_names: dict[str, str] = {}
+        self._stdio_context = None
+        self._session_context = None
+        self._session = None
+
+    async def start(self):
+        """Start one MCP process and reuse it for discovery and calls."""
+        if self._session is not None:
+            return self._session
+        try:
+            from mcp import ClientSession
+            from mcp.client.stdio import stdio_client
+        except ImportError as exc:
+            raise RuntimeError(
+                "Install HarnessLab with the 'mcp' extra: pip install harnesslab[mcp]"
+            ) from exc
+        self._stdio_context = stdio_client(self._params())
+        read, write = await self._stdio_context.__aenter__()
+        self._session_context = ClientSession(read, write)
+        self._session = await self._session_context.__aenter__()
+        try:
+            await self._session.initialize()
+        except Exception:
+            await self.close()
+            raise
+        return self._session
+
+    async def close(self) -> None:
+        """Close the MCP session and process, tolerating partial startup."""
+        session_context, stdio_context = self._session_context, self._stdio_context
+        self._session = None
+        self._session_context = None
+        self._stdio_context = None
+        if session_context is not None:
+            await session_context.__aexit__(None, None, None)
+        if stdio_context is not None:
+            await stdio_context.__aexit__(None, None, None)
 
     async def attach(self, registry: ToolRegistry) -> list[ToolSpec]:
-        tools = await self._list_tools()
+        session = await self.start()
+        tools = (await session.list_tools()).tools
         specs = []
         for tool in tools:
             local_name = f"{self.namespace}__{tool.name}"
             spec = ToolSpec(
                 name=local_name,
                 description=tool.description or f"MCP tool {tool.name}",
-                input_schema=tool.inputSchema,
+                input_schema=normalize_tool_schema(tool.inputSchema).normalized_schema,
                 read_only=False,
                 source=f"mcp:{self.namespace}",
             )
@@ -56,25 +94,8 @@ class MCPStdioProvider:
         return StdioServerParameters(command=self.command, args=self.args, env=self.env or None)
 
     async def _list_tools(self):
-        from mcp import ClientSession
-        from mcp.client.stdio import stdio_client
-
-        async with (
-            stdio_client(self._params()) as (read, write),
-            ClientSession(read, write) as session,
-        ):
-            await session.initialize()
-            result = await session.list_tools()
-            return result.tools
+        return (await (await self.start()).list_tools()).tools
 
     async def _call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
-        from mcp import ClientSession
-        from mcp.client.stdio import stdio_client
-
-        async with (
-            stdio_client(self._params()) as (read, write),
-            ClientSession(read, write) as session,
-        ):
-            await session.initialize()
-            result = await session.call_tool(name, arguments)
-            return [item.model_dump(mode="json") for item in result.content]
+        result = await (await self.start()).call_tool(name, arguments)
+        return [item.model_dump(mode="json") for item in result.content]

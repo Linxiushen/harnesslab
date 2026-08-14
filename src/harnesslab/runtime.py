@@ -6,6 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 from harnesslab.adapters.base import HarnessAdapter
+from harnesslab.agentic.schema import expose_tools
 from harnesslab.events import EventBus
 from harnesslab.models import Message, RunRecord, RunStatus, ToolCall, TraceEvent, utc_now
 from harnesslab.tools import ToolRegistry
@@ -60,6 +61,8 @@ class HarnessRuntime:
         adapter_name: str = "demo",
         max_turns: int = 6,
         run_id: str | None = None,
+        max_exposed_tools: int = 12,
+        max_tool_schema_tokens: int = 8_000,
     ) -> RunRecord:
         if adapter_name not in self.adapters:
             raise ValueError(f"Unknown adapter: {adapter_name}")
@@ -81,6 +84,19 @@ class HarnessRuntime:
             metadata={"max_turns": max_turns, "message_count": 2},
         )
         self.runs[run.id] = run
+        exposure = expose_tools(
+            self.tools.specs(),
+            query=task,
+            max_tools=max_exposed_tools,
+            max_tokens=max_tool_schema_tokens,
+        )
+        run.metadata["tool_exposure"] = {
+            "max_tools": max_exposed_tools,
+            "max_schema_tokens": max_tool_schema_tokens,
+            "exposed": [tool.name for tool in exposure.tools],
+            "dropped": exposure.dropped_tools,
+            "estimated_tokens": exposure.estimated_tokens,
+        }
         await self._emit(
             run,
             "run.started",
@@ -96,11 +112,13 @@ class HarnessRuntime:
                     {
                         "turn": turn_index,
                         "message_count": len(run.messages),
-                        "tool_count": len(self.tools.specs()),
+                        "tool_count": len(exposure.tools),
+                        "dropped_tool_count": len(exposure.dropped_tools),
+                        "tool_schema_tokens": exposure.estimated_tokens,
                     },
                 )
                 started = time.perf_counter()
-                turn = await adapter.complete(list(run.messages), self.tools.specs())
+                turn = await adapter.complete(list(run.messages), exposure.tools)
                 model_ms = round((time.perf_counter() - started) * 1000, 2)
                 await self._emit(
                     run,

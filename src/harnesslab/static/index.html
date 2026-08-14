@@ -6,10 +6,10 @@
     <meta name="theme-color" content="#171918" />
     <title>HarnessLab</title>
     <link rel="preconnect" href="https://unpkg.com" />
-    <link rel="stylesheet" href="./static/styles.css?v=3" />
+    <link rel="stylesheet" href="./static/styles.css?v=5" />
     <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
     <script src="./static/demo-data.js?v=1" defer></script>
-    <script src="./static/app.js?v=3" defer></script>
+    <script src="./static/app.js?v=5" defer></script>
   </head>
   <body>
     <aside class="sidebar">
@@ -20,6 +20,7 @@
 
       <nav class="primary-nav" aria-label="Workspace">
         <button class="nav-item active" data-view="trace"><i data-lucide="git-branch"></i><span>Trace explorer</span></button>
+        <button class="nav-item" data-view="control"><i data-lucide="network"></i><span>Agent control</span></button>
         <button class="nav-item" data-view="regression"><i data-lucide="diff"></i><span>Regression diff</span></button>
         <button class="nav-item" data-view="conformance"><i data-lucide="badge-check"></i><span>Conformance</span></button>
         <button class="nav-item" data-view="adapters"><i data-lucide="waypoints"></i><span>Adapters</span></button>
@@ -102,6 +103,68 @@
               <div id="run-answer">No completed output.</div>
             </div>
           </aside>
+        </div>
+      </section>
+
+      <section id="control-view" class="view">
+        <div class="metric-strip">
+          <div><span>Task route</span><strong id="agent-route">-</strong></div>
+          <div><span>Recovery</span><strong id="agent-recovery">-</strong></div>
+          <div><span>Policy</span><strong id="agent-policy">-</strong></div>
+          <div><span>Reference evals</span><strong id="agent-eval-score">-</strong></div>
+        </div>
+
+        <div class="agent-toolbar">
+          <label>
+            <span>FAILURE SCENARIO</span>
+            <select id="agent-scenario" aria-label="Agentic failure scenario"></select>
+          </label>
+          <label>
+            <span>RUN HISTORY</span>
+            <select id="agent-run-select" aria-label="Agentic run history"></select>
+          </label>
+          <button class="primary-button" id="run-agent-scenario"><i data-lucide="play"></i><span>Execute plan</span></button>
+          <button class="icon-button" id="cancel-agent-run" title="Cancel active Agent run" aria-label="Cancel active Agent run" disabled><i data-lucide="square"></i></button>
+          <button class="icon-button" id="export-agent-run" title="Export Agent Run artifact" aria-label="Export Agent Run artifact" disabled><i data-lucide="download"></i></button>
+          <button class="icon-button" id="run-agent-evals" title="Run Agentic evaluation suite" aria-label="Run Agentic evaluation suite"><i data-lucide="flask-conical"></i></button>
+        </div>
+
+        <div class="control-stages" aria-label="Agentic control plane architecture">
+          <div><i data-lucide="route"></i><span>Route</span><small>explainable score</small></div>
+          <div><i data-lucide="list-tree"></i><span>Plan</span><small>validated DAG</small></div>
+          <div><i data-lucide="shield-check"></i><span>Policy</span><small>capability token</small></div>
+          <div><i data-lucide="workflow"></i><span>Execute</span><small>bounded parallelism</small></div>
+          <div><i data-lucide="refresh-ccw"></i><span>Recover</span><small>retry / replan / rollback</small></div>
+          <div><i data-lucide="scan-line"></i><span>Evaluate</span><small>replayable evidence</small></div>
+        </div>
+
+        <div class="agent-grid">
+          <section class="agent-plan" aria-label="Execution plan">
+            <div class="section-heading">
+              <div><p>EXECUTION DAG</p><h2 id="agent-plan-title">No plan selected</h2></div>
+              <span class="status" id="agent-run-status">idle</span>
+            </div>
+            <div class="agent-step-list" id="agent-step-list"></div>
+          </section>
+
+          <aside class="agent-budget" aria-label="Budget and run facts">
+            <div class="section-heading"><div><p>CONTROL ENVELOPE</p><h2>Budgets &amp; trust</h2></div></div>
+            <dl class="run-facts" id="agent-facts"></dl>
+            <div class="budget-bars" id="agent-budget-bars"></div>
+          </aside>
+        </div>
+
+        <div class="agent-evidence">
+          <div class="section-heading">
+            <div><p>RECOVERY EVIDENCE</p><h2>Policy and execution events</h2></div>
+            <span class="count" id="agent-event-count">0</span>
+          </div>
+          <div class="data-table-wrap agent-event-table">
+            <table class="data-table">
+              <thead><tr><th>#</th><th>Event</th><th>Step</th><th>Evidence</th></tr></thead>
+              <tbody id="agent-event-body"></tbody>
+            </table>
+          </div>
         </div>
       </section>
 

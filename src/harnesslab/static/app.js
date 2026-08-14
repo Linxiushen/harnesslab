@@ -5,10 +5,16 @@ const state = {
   conformance: null,
   comparison: null,
   filter: "all",
+  agentRuns: [],
+  agentSelected: null,
+  agentEvals: null,
+  agentScenarios: [],
+  agentStream: null,
 };
 
 const viewLabels = {
   trace: ["RUNS / LIVE TRACE", "Execution trace"],
+  control: ["RUNTIME / AGENTIC CONTROL", "Production control plane"],
   regression: ["QUALITY / REGRESSION", "Trace contract diff"],
   conformance: ["QUALITY / PROTOCOL", "Conformance matrix"],
   adapters: ["RUNTIME / PROVIDERS", "Adapter registry"],
@@ -26,6 +32,18 @@ const eventMeta = {
   "tool.denied": ["Policy denial", "tool", "shield-x"],
   "tool.completed": ["Tool result", "tool", "package-check"],
 };
+
+const agentEventTypes = [
+  "agent.run.started", "agent.task.routed", "agent.plan.compiled",
+  "agent.scheduler.batch", "agent.step.started", "agent.step.completed",
+  "agent.step.failed", "agent.step.blocked", "agent.step.cancelled",
+  "agent.run.completed", "agent.run.failed", "agent.run.cancelled",
+  "policy.decision", "tool.attempt.started", "tool.attempt.completed",
+  "tool.attempt.failed", "recovery.retry.scheduled", "recovery.plan.revised",
+  "recovery.continued", "recovery.compensation.started",
+  "recovery.compensation.completed", "recovery.compensation.failed",
+  "security.prompt_injection.detected", "budget.exceeded", "agent.runtime.error",
+];
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -77,17 +95,28 @@ async function request(url, options) {
 }
 
 async function loadAll() {
-  const [meta, runs, conformance] = await Promise.all([
+  const [meta, runs, conformance, agentRuns, agentEvals, agentScenarios] = await Promise.all([
     request("/api/meta"),
     request("/api/runs"),
     request("/api/conformance"),
+    request("/api/agent/runs"),
+    request("/api/agent/evals"),
+    request("/api/agent/scenarios"),
   ]);
   state.meta = meta;
   state.runs = runs;
   state.conformance = conformance;
+  state.agentRuns = agentRuns;
+  state.agentEvals = agentEvals;
+  state.agentScenarios = agentScenarios;
+  const selectedAgentId = state.agentSelected?.id || agentRuns[0]?.id;
+  state.agentSelected = agentRuns.find((run) => run.id === selectedAgentId) || agentRuns[0] || null;
   const selectedId = state.selected?.id || meta.featured_run_id || runs[0]?.id;
   state.selected = runs.find((run) => run.id === selectedId) || runs[0] || null;
   render();
+  if (["queued", "running"].includes(state.agentSelected?.status)) {
+    watchAgentRun(state.agentSelected.id);
+  }
 }
 
 function render() {
@@ -98,7 +127,105 @@ function render() {
   renderConformance();
   renderAdapters();
   renderTools();
+  renderAgentic();
   icons();
+}
+
+function renderAgentic() {
+  const report = state.agentSelected;
+  const evals = state.agentEvals;
+  const scenarioSelect = $("#agent-scenario");
+  const previousScenario = scenarioSelect.value;
+  scenarioSelect.innerHTML = state.agentScenarios.map((scenario) => (
+    `<option value="${escapeHTML(scenario.id)}">${escapeHTML(scenario.id)}</option>`
+  )).join("");
+  if (state.agentScenarios.some((scenario) => scenario.id === previousScenario)) {
+    scenarioSelect.value = previousScenario;
+  }
+  const runSelect = $("#agent-run-select");
+  runSelect.innerHTML = state.agentRuns.map((run) => (
+    `<option value="${escapeHTML(run.id)}">${escapeHTML(run.id.replace("agent_", "#"))} / ${escapeHTML(run.scenario)}</option>`
+  )).join("") || '<option value="">No runs</option>';
+  if (report) runSelect.value = report.id;
+  $("#agent-eval-score").textContent = evals ? `${evals.passed}/${evals.total}` : "pending";
+
+  if (!report) {
+    $("#agent-route").textContent = "pending";
+    $("#agent-recovery").textContent = "-";
+    $("#agent-policy").textContent = "-";
+    $("#agent-step-list").innerHTML = '<div class="empty-state">Execute a scenario to inspect its DAG.</div>';
+    $("#agent-event-body").innerHTML = '<tr><td colspan="4" class="table-empty">No Agentic events yet.</td></tr>';
+    $("#cancel-agent-run").disabled = true;
+    $("#export-agent-run").disabled = true;
+    return;
+  }
+
+  const recoveryEvents = report.events.filter((event) => event.type.startsWith("recovery."));
+  const denied = report.events.filter((event) => event.type === "policy.decision" && event.payload.allowed === false);
+  $("#agent-route").textContent = `${report.assessment.task_class} / ${report.assessment.score}`;
+  $("#agent-recovery").textContent = `${recoveryEvents.length} actions`;
+  $("#agent-policy").textContent = denied.length ? `${denied.length} blocked` : "enforced";
+  $("#agent-plan-title").textContent = report.plan.objective;
+  $("#agent-run-status").textContent = report.status;
+  $("#agent-run-status").className = `status ${report.status}`;
+  $("#agent-event-count").textContent = report.events.length;
+  const isActive = ["queued", "running"].includes(report.status);
+  $("#cancel-agent-run").disabled = !isActive;
+  $("#export-agent-run").disabled = isActive;
+  $("#agent-step-list").innerHTML = report.steps.map((step, index) => {
+    const planStep = report.plan.steps.find((item) => item.id === step.step_id) || {};
+    const attempts = step.attempts.length;
+    return `<article class="agent-step ${escapeHTML(step.status)}">
+      <span class="agent-step-index">${String(index + 1).padStart(2, "0")}</span>
+      <div><strong>${escapeHTML(step.title)}</strong><code>${escapeHTML(step.tool)}</code><small>${escapeHTML((planStep.depends_on || []).length ? `after ${(planStep.depends_on || []).join(", ")}` : "root step")}</small></div>
+      <div class="agent-step-outcome"><span class="check-badge ${step.status === "failed" || step.status === "blocked" ? "failed" : ""}">${escapeHTML(step.status)}</span><small>${attempts} attempt${attempts === 1 ? "" : "s"}</small></div>
+    </article>`;
+  }).join("");
+
+  const usage = report.budget_usage;
+  const limits = report.budget_limits;
+  $("#agent-facts").innerHTML = `
+    <dt>Run</dt><dd><code>${escapeHTML(report.id)}</code></dd>
+    <dt>Scenario</dt><dd>${escapeHTML(report.scenario)}</dd>
+    <dt>Parallelism</dt><dd>${escapeHTML(report.plan.max_parallelism)}</dd>
+    <dt>Trust subject</dt><dd>${escapeHTML(report.metadata.capability_subject || "pending")}</dd>
+    <dt>Estimated cost</dt><dd>$${Number(usage.estimated_cost_usd).toFixed(6)}</dd>
+    <dt>Elapsed</dt><dd>${Number(usage.elapsed_seconds).toFixed(3)} s</dd>
+  `;
+  const budgetRows = [
+    ["Input tokens", usage.input_tokens, limits.max_input_tokens],
+    ["Tool calls", usage.tool_calls, limits.max_tool_calls],
+    ["Cost (micro-USD)", usage.estimated_cost_usd * 1e6, limits.max_cost_usd * 1e6],
+  ];
+  $("#agent-budget-bars").innerHTML = budgetRows.map(([label, value, limit]) => {
+    const percentage = Math.min(100, (Number(value) / Number(limit)) * 100);
+    return `<div><span><strong>${escapeHTML(label)}</strong><small>${escapeHTML(Number(value).toFixed(label === "Input tokens" || label === "Tool calls" ? 0 : 1))} / ${escapeHTML(Number(limit).toFixed(0))}</small></span><i><b style="width:${percentage.toFixed(2)}%"></b></i></div>`;
+  }).join("");
+
+  const visibleEvents = report.events.filter((event) => (
+    event.type.startsWith("agent.") || event.type.startsWith("policy.")
+      || event.type.startsWith("recovery.") || event.type.startsWith("security.")
+      || event.type.startsWith("budget.")
+  ));
+  $("#agent-event-body").innerHTML = visibleEvents.map((event) => `
+    <tr>
+      <td><code>${escapeHTML(event.sequence)}</code></td>
+      <td><strong>${escapeHTML(event.type)}</strong></td>
+      <td><code>${escapeHTML(event.payload.step_id || "run")}</code></td>
+      <td>${escapeHTML(compactValue(agentEventEvidence(event)))}</td>
+    </tr>
+  `).join("");
+}
+
+function agentEventEvidence(event) {
+  const payload = event.payload || {};
+  if (event.type === "policy.decision") return `${payload.allowed ? "allow" : "deny"}: ${payload.reason}`;
+  if (event.type === "agent.scheduler.batch") return `parallel batch: ${(payload.steps || []).join(", ")}`;
+  if (event.type === "security.prompt_injection.detected") return `score=${payload.score}; ${payload.patterns.join(", ")}`;
+  if (event.type.startsWith("recovery.")) return JSON.stringify(payload);
+  if (event.type.startsWith("agent.run.")) return payload.error || payload.scenario || payload.status || "terminal";
+  if (event.type === "agent.task.routed") return `score=${payload.score}; signals=${(payload.signals || []).map((signal) => signal.name).join(", ")}`;
+  return JSON.stringify(payload);
 }
 
 function renderMeta() {
@@ -271,6 +398,45 @@ function watchRun(runId) {
   stream.onerror = () => stream.close();
 }
 
+function watchAgentRun(runId) {
+  if (window.HarnessLabDemo?.active) return;
+  state.agentStream?.close();
+  const after = state.agentSelected?.id === runId
+    ? Math.max(0, ...(state.agentSelected.events || []).map((event) => event.sequence))
+    : 0;
+  const stream = new EventSource(`/api/agent/runs/${encodeURIComponent(runId)}/events?after=${after}`);
+  state.agentStream = stream;
+  let refreshing = false;
+  const refresh = async () => {
+    if (refreshing) return;
+    refreshing = true;
+    try {
+      const [report, runs] = await Promise.all([
+        request(`/api/agent/runs/${encodeURIComponent(runId)}`),
+        request("/api/agent/runs"),
+      ]);
+      state.agentRuns = runs;
+      if (state.agentSelected?.id === runId) state.agentSelected = report;
+      renderAgentic();
+      icons();
+      if (["completed", "failed", "cancelled"].includes(report.status)) {
+        stream.close();
+        if (state.agentStream === stream) state.agentStream = null;
+      }
+    } catch (error) {
+      stream.close();
+      toast(error.message);
+    } finally {
+      refreshing = false;
+    }
+  };
+  agentEventTypes.forEach((name) => stream.addEventListener(name, refresh));
+  stream.onerror = () => {
+    stream.close();
+    if (state.agentStream === stream) state.agentStream = null;
+  };
+}
+
 function switchView(name) {
   $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === name));
   $$(".view").forEach((view) => view.classList.toggle("active", view.id === `${name}-view`));
@@ -357,6 +523,7 @@ $("#export-trace").addEventListener("click", async () => {
     toast("Trace Contract exported");
   } catch (error) {
     toast(error.message);
+    renderAgentic();
   }
 });
 
@@ -367,6 +534,88 @@ $("#copy-id").addEventListener("click", async () => {
 });
 
 $("#refresh").addEventListener("click", () => loadAll().catch((error) => toast(error.message)));
+$("#agent-run-select").addEventListener("change", (event) => {
+  state.agentSelected = state.agentRuns.find((run) => run.id === event.currentTarget.value) || null;
+  renderAgentic();
+  icons();
+  if (["queued", "running"].includes(state.agentSelected?.status)) {
+    watchAgentRun(state.agentSelected.id);
+  }
+});
+$("#run-agent-scenario").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    const scenario = $("#agent-scenario").value;
+    const selectedScenario = state.agentScenarios.find((item) => item.id === scenario);
+    const task = selectedScenario?.task || selectedScenario?.description || scenario;
+    const report = await request("/api/agent/runs", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": crypto.randomUUID(),
+      },
+      body: JSON.stringify({ task, scenario }),
+    });
+    state.agentRuns.unshift(report);
+    state.agentSelected = report;
+    renderAgentic();
+    icons();
+    watchAgentRun(report.id);
+    toast(`Agent plan ${report.status}`);
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+$("#cancel-agent-run").addEventListener("click", async (event) => {
+  if (!state.agentSelected) return;
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    const report = await request(
+      `/api/agent/runs/${encodeURIComponent(state.agentSelected.id)}/cancel`,
+      { method: "POST" },
+    );
+    state.agentSelected = report;
+    renderAgentic();
+    toast("Cancellation requested");
+  } catch (error) {
+    toast(error.message);
+  }
+});
+$("#export-agent-run").addEventListener("click", async () => {
+  if (!state.agentSelected) return;
+  try {
+    const artifact = await request(
+      `/api/agent/runs/${encodeURIComponent(state.agentSelected.id)}/artifact`,
+    );
+    const blob = new Blob([JSON.stringify(artifact, null, 2)], { type: "application/json" });
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = href;
+    link.download = `${state.agentSelected.id}.agent.json`;
+    link.click();
+    URL.revokeObjectURL(href);
+    toast("Agent Run artifact exported");
+  } catch (error) {
+    toast(error.message);
+  }
+});
+$("#run-agent-evals").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    state.agentEvals = await request("/api/agent/evals", { method: "POST" });
+    renderAgentic();
+    toast(`${state.agentEvals.passed}/${state.agentEvals.total} Agentic evals passed`);
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    button.disabled = false;
+  }
+});
 $$('.nav-item').forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
 $$('.segmented button').forEach((button) => button.addEventListener("click", () => {
   state.filter = button.dataset.filter;

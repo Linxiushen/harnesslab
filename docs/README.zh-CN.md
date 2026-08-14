@@ -1,13 +1,20 @@
 # HarnessLab 中文说明
 
-**把 Agent Harness 的运行行为记录、对比并固化成可执行的 trace contract。**
+**把 Agent 的路由、执行、恢复、安全和回归验证做成可执行的工程契约。**
 
 [在线演示](https://linxiushen.github.io/harnesslab/) ·
+[Agentic 控制面](AGENTIC_CONTROL_PLANE.md) ·
+[架构说明](ARCHITECTURE.md) ·
+[社区需求证据](COMMUNITY_REQUIREMENTS.md) ·
+[运维手册](OPERATIONS.md) ·
+[架构评审材料与 PPT](ARCHITECTURE_REVIEW.zh-CN.md) ·
+[DeepSeek 面试题解](DEEPSEEK_INTERVIEW_PLAYBOOK.zh-CN.md) ·
 [Trace Contract 规范](TRACE_CONTRACT.md) ·
 [GitHub](https://github.com/Linxiushen/harnesslab)
 
-HarnessLab 不是另一个只看最终答案的评测工具。它关注模型与答案之间的编排层：模型回合、
-工具调用、审批/拒绝决策、工具结果和终止状态是否保持严格顺序与关联关系。
+HarnessLab 不是另一个只看最终答案的评测工具。v0.4 提供完整 Agentic 控制面：可解释任务路由、
+DAG 调度、能力令牌、上下文/长期记忆、Token/成本预算、重试/重规划/补偿、Prompt Injection 隔离，
+并把每个决策写成可持久化、可回放事件。
 
 ![HarnessLab Trace Contract 回归差分](regression.png)
 
@@ -28,11 +35,35 @@ python -m venv .venv
 .venv\Scripts\pip install -e ".[dev]"
 .venv\Scripts\harnesslab snapshot "Review the checkout authorization change" -o baseline.trace.json
 .venv\Scripts\harnesslab verify baseline.trace.json
+.venv\Scripts\harnesslab agent-eval
 .venv\Scripts\harnesslab serve
 ```
 
 打开 `http://127.0.0.1:4318`。`verify` 在生命周期、工具路径、审批路径、终态或协议约束发生
 回归时返回非零退出码，可直接作为 CI gate。
+
+## Agentic 控制面
+
+- 简单任务单工具直达，复杂任务进入可验证的 DAG。
+- Ready Set 有界并发，支持超时、取消和输出 Schema 校验。
+- 瞬时且幂等的错误重试；主路径永久失败可切换安全备用计划。
+- 下游失败按完成顺序反向补偿已经发生的副作用。
+- HMAC capability token 绑定用户、Run、权限和过期时间。
+- 外部工具结果检测 Prompt Injection，污染结果不能驱动写操作。
+- Message/Token 双窗口、输出预留、TTL、去重、乐观锁和容量上限。
+- 模型先过上下文、质量、工具成功率、安全、延迟和成本硬门槛，再评分选型。
+- Run 与有序事件写入 SQLite；进程重启后保留报告，并显式终止中断任务。
+- `Idempotency-Key` 原子去重；同键异参冲突，避免副作用任务重复提交。
+- Agent Run 支持后台执行、SSE、执行中取消，以及带双指纹的防篡改 artifact。
+- 9 项离线发布门禁覆盖恢复、安全、预算、并发、记忆、流控和模型选择。
+
+```powershell
+.venv\Scripts\harnesslab agent-run --scenario enterprise-recovery
+.venv\Scripts\harnesslab agent-run --scenario prompt-injection
+.venv\Scripts\harnesslab agent-run --scenario enterprise-recovery --artifact run.agent.json
+.venv\Scripts\harnesslab agent-replay run.agent.json
+.venv\Scripts\harnesslab agent-eval
+```
 
 ## Trace Contract v1
 
@@ -70,6 +101,10 @@ python -m venv .venv
 | `harnesslab compare before.json after.json` | 离线对比两个 artifact |
 | `harnesslab check` | 运行 conformance matrix |
 | `harnesslab serve` | 启动 API 与本地工作台 |
+| `harnesslab agent-run --scenario NAME` | 执行确定性的生产故障场景 |
+| `harnesslab agent-run --artifact run.agent.json` | 执行并导出 Agent Run artifact |
+| `harnesslab agent-replay run.agent.json` | 离线校验指纹、事件与执行不变量 |
+| `harnesslab agent-eval` | 运行 9 项 Agentic 发布门禁 |
 
 确定性 fixture 还可以加 `--strict-content`，让稳定 payload 的任何变化也导致 CI 失败。
 

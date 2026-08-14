@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query, status
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -17,6 +17,10 @@ from harnesslab.adapters import (
     OpenAICompatibleAdapter,
     RegressionFixtureAdapter,
 )
+from harnesslab.agentic.artifact import AgentRunArtifact
+from harnesslab.agentic.contracts import AgentRunReport, AgentRunRequest, EvalReport
+from harnesslab.agentic.service import AgenticService
+from harnesslab.agentic.store import DuplicateRun, IdempotencyConflict
 from harnesslab.conformance import ConformanceReport, run_conformance
 from harnesslab.models import RunRecord, RunRequest, TraceCompareRequest
 from harnesslab.runtime import HarnessRuntime
@@ -64,10 +68,30 @@ async def lifespan(app: FastAPI):
     )
     app.state.featured_run_id = seed.id
     app.state.regression_run_id = regression.id
-    yield
+    agent_service: AgenticService = app.state.agent_service
+    if not agent_service.list_runs():
+        await agent_service.execute(
+            AgentRunRequest(
+                task=(
+                    "Investigate the production checkout authorization regression, compare "
+                    "evidence, apply a safe fix, verify it, and deploy with rollback protection."
+                ),
+                scenario="enterprise-recovery",
+            )
+        )
+    await agent_service.evaluate()
+    try:
+        yield
+    finally:
+        await agent_service.close()
 
 
-def create_app(runtime: HarnessRuntime | None = None, *, seed_demo: bool = True) -> FastAPI:
+def create_app(
+    runtime: HarnessRuntime | None = None,
+    *,
+    seed_demo: bool = True,
+    agent_service: AgenticService | None = None,
+) -> FastAPI:
     chosen_lifespan = lifespan if seed_demo else None
     app = FastAPI(
         title="HarnessLab",
@@ -76,6 +100,16 @@ def create_app(runtime: HarnessRuntime | None = None, *, seed_demo: bool = True)
         lifespan=chosen_lifespan,
     )
     app.state.runtime = runtime or build_runtime()
+    database_path = (
+        os.getenv("HARNESSLAB_AGENT_DB", ".harnesslab/agent-runs.db")
+        if seed_demo
+        else ":memory:"
+    )
+    signing_secret = os.getenv("HARNESSLAB_AGENT_SIGNING_SECRET")
+    app.state.agent_service = agent_service or AgenticService(
+        database_path=database_path,
+        signing_secret=signing_secret.encode("utf-8") if signing_secret else None,
+    )
     app.state.conformance = None
     app.state.background_runs = set()
 
@@ -96,7 +130,108 @@ def create_app(runtime: HarnessRuntime | None = None, *, seed_demo: bool = True)
             "tools": [spec.model_dump() for spec in active_runtime.tools.specs()],
             "featured_run_id": getattr(app.state, "featured_run_id", None),
             "regression_run_id": getattr(app.state, "regression_run_id", None),
+            "agentic_control_plane": {
+                "contract": "harnesslab.agent-run/v1",
+                "features": [
+                    "explainable-routing",
+                    "bounded-dag-scheduling",
+                    "capability-policy",
+                    "retry-replan-rollback",
+                    "prompt-injection-containment",
+                    "token-cost-tool-budgets",
+                    "sqlite-durable-runs",
+                    "idempotent-submission",
+                    "live-sse-and-cancellation",
+                    "portable-replay-artifacts",
+                ],
+                "scenarios": [item["id"] for item in AgenticService.scenarios()],
+            },
         }
+
+    @app.get("/api/agent/scenarios")
+    async def agent_scenarios() -> list[dict[str, str]]:
+        return AgenticService.scenarios()
+
+    @app.get("/api/agent/runs", response_model=list[AgentRunReport])
+    async def list_agent_runs() -> list[AgentRunReport]:
+        return app.state.agent_service.list_runs()
+
+    @app.get("/api/agent/runs/{run_id}", response_model=AgentRunReport)
+    async def get_agent_run(run_id: str) -> AgentRunReport:
+        try:
+            return app.state.agent_service.get_run(run_id)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail="Agent run not found") from exc
+
+    @app.post(
+        "/api/agent/runs",
+        response_model=AgentRunReport,
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+    async def create_agent_run(
+        request: AgentRunRequest,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ) -> AgentRunReport:
+        try:
+            return await app.state.agent_service.submit(
+                request,
+                idempotency_key=idempotency_key,
+            )
+        except (DuplicateRun, IdempotencyConflict) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except (ValueError, PermissionError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/agent/runs/{run_id}/events")
+    async def agent_run_events(
+        run_id: str,
+        after: int = Query(default=0, ge=0),
+    ) -> StreamingResponse:
+        try:
+            app.state.agent_service.get_run(run_id)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail="Agent run not found") from exc
+
+        async def stream() -> AsyncIterator[str]:
+            async for event in app.state.agent_service.subscribe(run_id, after=after):
+                yield (
+                    f"id: {event.sequence}\nevent: {event.type}\n"
+                    f"data: {event.model_dump_json()}\n\n"
+                )
+
+        return StreamingResponse(
+            stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    @app.post(
+        "/api/agent/runs/{run_id}/cancel",
+        response_model=AgentRunReport,
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+    async def cancel_agent_run(run_id: str) -> AgentRunReport:
+        try:
+            return app.state.agent_service.cancel(run_id)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail="Agent run not found") from exc
+
+    @app.get("/api/agent/runs/{run_id}/artifact", response_model=AgentRunArtifact)
+    async def export_agent_run(run_id: str) -> AgentRunArtifact:
+        try:
+            return app.state.agent_service.artifact(run_id)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail="Agent run not found") from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/api/agent/evals", response_model=EvalReport | None)
+    async def get_agent_evals() -> EvalReport | None:
+        return app.state.agent_service.last_eval
+
+    @app.post("/api/agent/evals", response_model=EvalReport)
+    async def run_agent_evals() -> EvalReport:
+        return await app.state.agent_service.evaluate()
 
     @app.get("/api/runs", response_model=list[RunRecord])
     async def list_runs() -> list[RunRecord]:
@@ -119,12 +254,8 @@ def create_app(runtime: HarnessRuntime | None = None, *, seed_demo: bool = True)
     @app.post("/api/compare", response_model=TraceComparison)
     async def compare_runs(request: TraceCompareRequest) -> TraceComparison:
         try:
-            baseline = build_trace_artifact(
-                app.state.runtime.get_run(request.baseline_run_id)
-            )
-            candidate = build_trace_artifact(
-                app.state.runtime.get_run(request.candidate_run_id)
-            )
+            baseline = build_trace_artifact(app.state.runtime.get_run(request.baseline_run_id))
+            candidate = build_trace_artifact(app.state.runtime.get_run(request.candidate_run_id))
         except LookupError as exc:
             raise HTTPException(status_code=404, detail="Run not found") from exc
         return compare_trace_artifacts(baseline, candidate)

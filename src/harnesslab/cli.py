@@ -7,6 +7,14 @@ from pathlib import Path
 import uvicorn
 
 from harnesslab.adapters import DeepSeekHarnessProbe
+from harnesslab.agentic.artifact import (
+    AgentRunArtifact,
+    build_agent_artifact,
+    replay_agent_artifact,
+)
+from harnesslab.agentic.contracts import AgentRunRequest
+from harnesslab.agentic.scenarios import SCENARIO_NAMES
+from harnesslab.agentic.service import AgenticService
 from harnesslab.api import build_runtime
 from harnesslab.conformance import run_conformance
 from harnesslab.trace_contract import (
@@ -68,6 +76,39 @@ def build_parser() -> argparse.ArgumentParser:
     )
     probe.add_argument("base_url")
     probe.add_argument("--token")
+
+    agent_run = commands.add_parser(
+        "agent-run",
+        help="Run a deterministic production Agentic recovery scenario",
+    )
+    agent_run.add_argument(
+        "--scenario",
+        choices=SCENARIO_NAMES,
+        default="enterprise-recovery",
+    )
+    agent_run.add_argument(
+        "--artifact",
+        metavar="PATH",
+        help="Write a portable Agent Run artifact after execution",
+    )
+
+    agent_replay = commands.add_parser(
+        "agent-replay",
+        help="Verify and replay Agent Run artifact invariants offline",
+    )
+    agent_replay.add_argument("artifact")
+    agent_run.add_argument(
+        "--task",
+        default=(
+            "Investigate the production checkout authorization regression, compare evidence, "
+            "apply a safe fix, verify it, and deploy with rollback protection."
+        ),
+    )
+
+    commands.add_parser(
+        "agent-eval",
+        help="Run retry, replan, rollback, injection, budget, and DAG evals",
+    )
     return parser
 
 
@@ -88,6 +129,31 @@ async def run_check(adapter: str) -> None:
 async def run_probe(base_url: str, token: str | None) -> None:
     document = await DeepSeekHarnessProbe(base_url, token).discover()
     print(document.model_dump_json(indent=2))
+
+
+async def run_agent_scenario(task: str, scenario: str, artifact_path: str | None) -> None:
+    service = AgenticService()
+    try:
+        report = await service.execute(AgentRunRequest(task=task, scenario=scenario))
+        print(report.model_dump_json(indent=2))
+        if artifact_path:
+            artifact = build_agent_artifact(report)
+            Path(artifact_path).write_text(artifact.model_dump_json(indent=2), encoding="utf-8")
+        if report.status not in {"completed"}:
+            raise SystemExit(1)
+    finally:
+        await service.close()
+
+
+async def run_agent_evals() -> None:
+    service = AgenticService()
+    try:
+        report = await service.evaluate()
+        print(report.model_dump_json(indent=2))
+        if report.passed != report.total:
+            raise SystemExit(1)
+    finally:
+        await service.close()
 
 
 async def snapshot_task(
@@ -143,6 +209,14 @@ def load_artifact(path: str) -> TraceArtifact:
     return TraceArtifact.model_validate_json(Path(path).read_text(encoding="utf-8"))
 
 
+def replay_agent_run(path: str) -> None:
+    artifact = AgentRunArtifact.model_validate_json(Path(path).read_text(encoding="utf-8"))
+    replay = replay_agent_artifact(artifact)
+    print(replay.model_dump_json(indent=2))
+    if not replay.valid:
+        raise SystemExit(1)
+
+
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     if args.command == "serve":
@@ -166,6 +240,12 @@ def main(argv: list[str] | None = None) -> None:
         compare_snapshots(args.baseline, args.candidate, args.strict_content)
     elif args.command == "probe":
         asyncio.run(run_probe(args.base_url, args.token))
+    elif args.command == "agent-run":
+        asyncio.run(run_agent_scenario(args.task, args.scenario, args.artifact))
+    elif args.command == "agent-replay":
+        replay_agent_run(args.artifact)
+    elif args.command == "agent-eval":
+        asyncio.run(run_agent_evals())
 
 
 if __name__ == "__main__":

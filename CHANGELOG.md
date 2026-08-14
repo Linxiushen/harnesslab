@@ -2,6 +2,54 @@
 
 All notable changes to HarnessLab are documented here.
 
+## Unreleased
+
+### Added
+
+- Public developer-requirement evidence matrix with links to Pi community issues.
+- Bounded query-aware tool exposure with provider-safe JSON Schema normalization.
+- Deterministic extension activation, failure isolation, and reverse-order teardown.
+- Bounded cross-session event bus with sequence-based replay.
+- Reusable MCP stdio session lifecycle with explicit `start()` and `close()`.
+- Architecture and operations documents for security and production review.
+- Added a 15-slide Chinese architecture review deck with source notes and a realistic scale roadmap.
+
+### Changed
+
+- The runtime records exposed, dropped, and estimated tool-schema budgets per run.
+
+## 0.4.0 - 2026-08-10
+
+### Added
+
+- SQLite-backed Agent Run and ordered event persistence with startup recovery.
+- Atomic `Idempotency-Key` submission semantics and duplicate `run_id` protection.
+- Background Agent Run execution with `202 Accepted`, live SSE, and public cancellation.
+- Portable `harnesslab.agent-run/v1` artifacts with stable execution and integrity fingerprints.
+- Offline `agent-replay` invariant verification and tamper detection.
+- Live workbench controls for cancellation and Agent Run artifact export.
+
+### Changed
+
+- In-flight tool calls now observe cancellation instead of waiting for the next DAG batch.
+- Agent Run reports remain inspectable after server restart.
+- The public API exposes durable lifecycle behavior rather than synchronously waiting for a plan.
+
+## 0.3.0 - 2026-08-10
+
+### Added
+
+- Explainable simple/complex task routing and validated execution DAGs.
+- Bounded parallel scheduler with typed tool contracts and output validation.
+- Failure classification with idempotent retry, fallback replanning, and saga compensation.
+- Run-scoped HMAC capability tokens, egress gates, prompt-injection detection, and taint blocking.
+- Message/token context windows and bounded TTL-aware long-term memory.
+- Token, tool-call, cost, wall-time, and per-user traffic budgets.
+- Constraint-first base-versus-fine-tuned model selection.
+- Five deterministic failure scenarios and nine executable Agentic release gates.
+- Agentic API, CLI commands, public static demo data, and control-plane workbench view.
+- DeepSeek interview question-to-code playbook with timestamped answers.
+
 ## 0.2.0 - 2026-08-06
 
 ### Added
