@@ -8,6 +8,7 @@
 [社区需求证据](COMMUNITY_REQUIREMENTS.md) ·
 [运维手册](OPERATIONS.md) ·
 [架构评审材料与 PPT](ARCHITECTURE_REVIEW.zh-CN.md) ·
+[平台扩展与 100k 规模路线](PLATFORM_SCALE.md) ·
 [DeepSeek 面试题解](DEEPSEEK_INTERVIEW_PLAYBOOK.zh-CN.md) ·
 [Trace Contract 规范](TRACE_CONTRACT.md) ·
 [GitHub](https://github.com/Linxiushen/harnesslab)

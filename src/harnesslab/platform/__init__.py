@@ -1,0 +1,115 @@
+"""Platform primitives for multi-tenant HarnessLab deployments."""
+
+from harnesslab.platform.audit import AuditChain, AuditIntegrityError, AuditRecord
+from harnesslab.platform.evaluation import (
+    DatasetRegistry,
+    EvalCase,
+    EvalCaseResult,
+    EvalDataset,
+    EvalRunReport,
+    EvalStatus,
+    EvaluationRunner,
+)
+from harnesslab.platform.health import (
+    ComponentHealth,
+    HealthRegistry,
+    HealthStatus,
+    ReadinessReport,
+)
+from harnesslab.platform.mcp_gateway import (
+    CircuitBreaker,
+    GatewayServerSnapshot,
+    GatewayServerState,
+    GatewayToolBinding,
+    MCPGateway,
+    MCPGatewayCircuitOpen,
+    MCPGatewayConfig,
+    MCPGatewayError,
+    MCPGatewayUnavailable,
+)
+from harnesslab.platform.model_router import (
+    ModelCapability,
+    ModelEndpoint,
+    ModelRequestConstraints,
+    ModelRouter,
+    ModelRoutingDecision,
+)
+from harnesslab.platform.observability import (
+    Counter,
+    Gauge,
+    Histogram,
+    MetricRegistry,
+    Span,
+)
+from harnesslab.platform.quotas import (
+    QuotaExceeded,
+    QuotaKind,
+    QuotaLedger,
+    QuotaLimit,
+    QuotaReservation,
+)
+from harnesslab.platform.scale import (
+    FileLineCount,
+    PackageLineCount,
+    ScaleReport,
+    analyze_repository,
+)
+from harnesslab.platform.tenancy import (
+    AccessDecision,
+    Permission,
+    Principal,
+    Role,
+    Tenant,
+    TenantRegistry,
+)
+
+__all__ = [
+    "AccessDecision",
+    "AuditChain",
+    "AuditIntegrityError",
+    "AuditRecord",
+    "ComponentHealth",
+    "Counter",
+    "CircuitBreaker",
+    "DatasetRegistry",
+    "EvalCase",
+    "EvalCaseResult",
+    "EvalDataset",
+    "EvalRunReport",
+    "EvalStatus",
+    "EvaluationRunner",
+    "FileLineCount",
+    "GatewayServerSnapshot",
+    "GatewayServerState",
+    "GatewayToolBinding",
+    "Gauge",
+    "HealthRegistry",
+    "HealthStatus",
+    "Histogram",
+    "MetricRegistry",
+    "ModelCapability",
+    "ModelEndpoint",
+    "ModelRequestConstraints",
+    "ModelRouter",
+    "ModelRoutingDecision",
+    "MCPGateway",
+    "MCPGatewayCircuitOpen",
+    "MCPGatewayConfig",
+    "MCPGatewayError",
+    "MCPGatewayUnavailable",
+    "Permission",
+    "PackageLineCount",
+    "Principal",
+    "QuotaExceeded",
+    "QuotaKind",
+    "QuotaLedger",
+    "QuotaLimit",
+    "QuotaReservation",
+    "ReadinessReport",
+    "Role",
+    "ScaleReport",
+    "Span",
+    "Tenant",
+    "TenantRegistry",
+    "analyze_repository",
+]

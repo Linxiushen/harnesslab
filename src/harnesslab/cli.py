@@ -17,6 +17,7 @@ from harnesslab.agentic.scenarios import SCENARIO_NAMES
 from harnesslab.agentic.service import AgenticService
 from harnesslab.api import build_runtime
 from harnesslab.conformance import run_conformance
+from harnesslab.platform.scale import analyze_repository
 from harnesslab.trace_contract import (
     TraceArtifact,
     build_trace_artifact,
@@ -109,6 +110,12 @@ def build_parser() -> argparse.ArgumentParser:
         "agent-eval",
         help="Run retry, replan, rollback, injection, budget, and DAG evals",
     )
+    scale = commands.add_parser(
+        "scale-report",
+        help="Report real source and test line counts by package",
+    )
+    scale.add_argument("--root", default=".")
+    scale.add_argument("--target-lines", type=int, default=100_000)
     return parser
 
 
@@ -217,6 +224,10 @@ def replay_agent_run(path: str) -> None:
         raise SystemExit(1)
 
 
+def print_scale_report(root: str, target_lines: int) -> None:
+    print(analyze_repository(root, target_lines=target_lines).model_dump_json(indent=2))
+
+
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     if args.command == "serve":
@@ -246,6 +257,8 @@ def main(argv: list[str] | None = None) -> None:
         replay_agent_run(args.artifact)
     elif args.command == "agent-eval":
         asyncio.run(run_agent_evals())
+    elif args.command == "scale-report":
+        print_scale_report(args.root, args.target_lines)
 
 
 if __name__ == "__main__":

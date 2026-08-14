@@ -32,6 +32,13 @@ Tool Registry + MCP         normalized JSON Schema and explicit approval
 HarnessAdapter              DeepSeek API, OpenAI-compatible, deterministic demo
 ```
 
+The platform package adds the deployment plane around this execution core:
+tenant/RBAC authorization, atomic quotas, hash-chain audit, bounded metrics,
+readiness checks, an MCP server gateway, versioned evaluation datasets, and
+constraint-first model endpoint routing. These are intentionally separate from
+the run scheduler so a storage or transport implementation can evolve without
+changing run semantics.
+
 The trace and artifact contracts cross all layers. They are intentionally not a
 copy of a provider's private protocol.
 

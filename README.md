@@ -12,6 +12,7 @@
 [Agentic control plane](docs/AGENTIC_CONTROL_PLANE.md) | [Trace Contract](docs/TRACE_CONTRACT.md) |
 [Architecture](docs/ARCHITECTURE.md) | [Community requirements](docs/COMMUNITY_REQUIREMENTS.md) |
 [Operations](docs/OPERATIONS.md) | [Architecture review deck](docs/ARCHITECTURE_REVIEW.zh-CN.md) |
+[Platform scale plan](docs/PLATFORM_SCALE.md) |
 [Interview playbook 中文](docs/DEEPSEEK_INTERVIEW_PLAYBOOK.zh-CN.md) |
 [中文说明](docs/README.zh-CN.md)
 

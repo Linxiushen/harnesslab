@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException, Query, status
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from harnesslab import __version__
@@ -23,6 +23,8 @@ from harnesslab.agentic.service import AgenticService
 from harnesslab.agentic.store import DuplicateRun, IdempotencyConflict
 from harnesslab.conformance import ConformanceReport, run_conformance
 from harnesslab.models import RunRecord, RunRequest, TraceCompareRequest
+from harnesslab.platform.health import ComponentHealth, HealthRegistry, HealthStatus
+from harnesslab.platform.observability import MetricRegistry
 from harnesslab.runtime import HarnessRuntime
 from harnesslab.tools import build_demo_registry
 from harnesslab.trace_contract import (
@@ -110,6 +112,12 @@ def create_app(
         database_path=database_path,
         signing_secret=signing_secret.encode("utf-8") if signing_secret else None,
     )
+    app.state.health = HealthRegistry()
+    app.state.health.register(
+        "agent-run-store",
+        lambda: ComponentHealth(name="agent-run-store", status=HealthStatus.HEALTHY),
+    )
+    app.state.metrics = MetricRegistry()
     app.state.conformance = None
     app.state.background_runs = set()
 
@@ -146,7 +154,30 @@ def create_app(
                 ],
                 "scenarios": [item["id"] for item in AgenticService.scenarios()],
             },
+            "platform": {
+                "features": [
+                    "multi-tenant-rbac",
+                    "atomic-quotas",
+                    "hash-chain-audit",
+                    "bounded-metrics",
+                    "mcp-gateway",
+                    "dataset-replay-runner",
+                    "constraint-first-model-router",
+                ]
+            },
         }
+
+    @app.get("/readyz")
+    async def readiness() -> JSONResponse:
+        report = await app.state.health.readiness()
+        return JSONResponse(
+            content=report.model_dump(mode="json"),
+            status_code=200 if report.ready else 503,
+        )
+
+    @app.get("/api/platform/metrics")
+    async def platform_metrics() -> dict[str, object]:
+        return app.state.metrics.snapshot()
 
     @app.get("/api/agent/scenarios")
     async def agent_scenarios() -> list[dict[str, str]]:

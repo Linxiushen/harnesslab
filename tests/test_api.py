@@ -15,9 +15,15 @@ async def test_health_and_meta_are_available_without_model_credentials() -> None
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         health = await client.get("/healthz")
+        readiness = await client.get("/readyz")
         meta = await client.get("/api/meta")
+        metrics = await client.get("/api/platform/metrics")
 
     assert health.json()["status"] == "ok"
+    assert readiness.status_code == 200
+    assert readiness.json()["ready"] is True
+    assert "metrics" in metrics.json()
+    assert "mcp-gateway" in meta.json()["platform"]["features"]
     assert "demo" in meta.json()["adapters"]
     assert {tool["name"] for tool in meta.json()["tools"]} == {
         "search_repository",

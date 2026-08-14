@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0
+
+- Added multi-tenant RBAC, atomic quotas, hash-chain audit records, bounded metrics, and health/readiness primitives.
+- Added MCP Gateway server registration, discovery, circuit breaking, concurrency limits, and bounded tool exposure.
+- Added versioned evaluation datasets, replay runner, constraint-first model routing, and `scale-report`.
+
 All notable changes to HarnessLab are documented here.
 
 ## Unreleased

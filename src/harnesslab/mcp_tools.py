@@ -61,8 +61,13 @@ class MCPStdioProvider:
             await stdio_context.__aexit__(None, None, None)
 
     async def attach(self, registry: ToolRegistry) -> list[ToolSpec]:
-        session = await self.start()
-        tools = (await session.list_tools()).tools
+        specs = await self.discover()
+        for spec in specs:
+            registry.register(spec, self._handler(spec.name))
+        return specs
+
+    async def discover(self) -> list[ToolSpec]:
+        tools = (await (await self.start()).list_tools()).tools
         specs = []
         for tool in tools:
             local_name = f"{self.namespace}__{tool.name}"
@@ -74,9 +79,11 @@ class MCPStdioProvider:
                 source=f"mcp:{self.namespace}",
             )
             self._remote_names[local_name] = tool.name
-            registry.register(spec, self._handler(local_name))
             specs.append(spec)
         return specs
+
+    async def call(self, remote_name: str, arguments: dict[str, Any]) -> Any:
+        return await self._call_tool(remote_name, arguments)
 
     def _handler(self, local_name: str):
         async def call(arguments: dict[str, Any]) -> Any:
