@@ -16,13 +16,16 @@ tracked as an engineering capacity target, not a reason to generate duplicate co
 | `platform.evaluation` | versioned JSONL datasets, bounded replay execution, contract assertions |
 | `platform.model_router` | hard constraints before quality/latency weighted endpoint selection |
 | `platform.scale` | reproducible source/test line-count report |
+| `platform.auth` | API-key digests and signed bearer claims |
+| `platform.mcp_manifest` | signed server manifests and egress allowlists |
+| `platform.storage` | durable SQLite KV/CAS/TTL metadata store |
 
 ## Measurement
 
 Run from the repository root:
 
 ```powershell
-.venv\Scripts\harnesslab.exe scale-report --target-lines 100000
+.venv\Scripts\harnesslab.exe scale-report --target-lines 500000
 ```
 
 The report excludes `.git`, virtual environments, caches, and temporary build directories. It reports

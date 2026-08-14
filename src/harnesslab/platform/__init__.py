@@ -1,6 +1,15 @@
 """Platform primitives for multi-tenant HarnessLab deployments."""
 
 from harnesslab.platform.audit import AuditChain, AuditIntegrityError, AuditRecord
+from harnesslab.platform.auth import (
+    APIKeyRecord,
+    APIKeyStore,
+    AuthClaims,
+    Authenticator,
+    AuthError,
+    CredentialKind,
+    TokenSigner,
+)
 from harnesslab.platform.evaluation import (
     DatasetRegistry,
     EvalCase,
@@ -26,6 +35,14 @@ from harnesslab.platform.mcp_gateway import (
     MCPGatewayConfig,
     MCPGatewayError,
     MCPGatewayUnavailable,
+)
+from harnesslab.platform.mcp_manifest import (
+    EgressPolicy,
+    ManifestError,
+    ManifestSigner,
+    MCPServerManifest,
+    SignedMCPManifest,
+    default_manifest,
 )
 from harnesslab.platform.model_router import (
     ModelCapability,
@@ -54,6 +71,7 @@ from harnesslab.platform.scale import (
     ScaleReport,
     analyze_repository,
 )
+from harnesslab.platform.storage import SQLitePlatformStore, StorageConflict, StoredValue
 from harnesslab.platform.tenancy import (
     AccessDecision,
     Permission,
@@ -65,6 +83,11 @@ from harnesslab.platform.tenancy import (
 
 __all__ = [
     "AccessDecision",
+    "APIKeyRecord",
+    "APIKeyStore",
+    "AuthClaims",
+    "AuthError",
+    "Authenticator",
     "AuditChain",
     "AuditIntegrityError",
     "AuditRecord",
@@ -72,6 +95,7 @@ __all__ = [
     "Counter",
     "CircuitBreaker",
     "DatasetRegistry",
+    "EgressPolicy",
     "EvalCase",
     "EvalCaseResult",
     "EvalDataset",
@@ -87,6 +111,9 @@ __all__ = [
     "HealthStatus",
     "Histogram",
     "MetricRegistry",
+    "MCPServerManifest",
+    "ManifestError",
+    "ManifestSigner",
     "ModelCapability",
     "ModelEndpoint",
     "ModelRequestConstraints",
@@ -108,8 +135,15 @@ __all__ = [
     "ReadinessReport",
     "Role",
     "ScaleReport",
+    "SignedMCPManifest",
+    "SQLitePlatformStore",
     "Span",
+    "StorageConflict",
+    "StoredValue",
     "Tenant",
     "TenantRegistry",
+    "TokenSigner",
+    "CredentialKind",
     "analyze_repository",
+    "default_manifest",
 ]

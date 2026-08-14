@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.0
+
+- Added API-key digest storage, signed bearer claims, signed MCP manifests, egress allowlists, and SQLite CAS/TTL storage.
+
 ## 0.5.0
 
 - Added multi-tenant RBAC, atomic quotas, hash-chain audit records, bounded metrics, and health/readiness primitives.
